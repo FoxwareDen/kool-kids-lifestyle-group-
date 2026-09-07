@@ -71,7 +71,7 @@ function RouteComponent() {
         if (!result.value) {
           throw new Error("No schedules found");
         }
-        
+
         // @ts-ignore
         const bookings: BookingResponse[] = (
           await Promise.all(

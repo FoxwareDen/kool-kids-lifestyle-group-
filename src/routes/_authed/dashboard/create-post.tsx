@@ -1,10 +1,13 @@
-import type { PageBlock, BookingPage, Translatable, Language } from '#/lib/experiences'
-import { resolveTranslatable, createEmptyBlock, createBookingPage, parseCategories, serializeCategories, type ExperienceStatus } from '#/lib/experiences'
+import { resolveTranslatable, createEmptyBlock, type ExperienceStatus, type Translatable, type Language, type PageBlock } from '#/lib/experiences'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState, useCallback, useEffect, useMemo, type ChangeEvent } from 'react'
 import { BookingPageRenderer } from '#/components/BookingPageRenderer'
 import { Button, SectionCard, SelectField, controlClass } from '#/components/dashboard/form-controls'
 import { Trash2 } from 'lucide-react'
+import { setTranslated } from '#/lib/utils'
+import type { Asset } from '#/lib/pocketbase'
+import MediaModel from '#/components/MediaModel'
+import { createBlogPage, createEvent, type BlogPageBlock } from '#/lib/blog'
 
 const MAX_SIZE = 5242880
 const MAX_VIDEO_SIZE = 52428800
@@ -13,9 +16,20 @@ export const Route = createFileRoute('/_authed/dashboard/create-post')({
   component: RouteComponent,
 })
 
-type SkeletonPageData = Omit<BookingPage, 'blocks' | 'createdAt' | 'updatedAt' | 'id' | 'slug'>
+type PostType = 'blog' | 'event'
 
-const BLOCK_TYPES: PageBlock['type'][] = ['header', 'paragraph', 'image', 'video']
+type SkeletonPageData = {
+  title: Translatable
+  content: Record<string, any>
+  start_date?: string
+  end_date?: string
+  type: PostType
+  defaultLanguage: Language
+  enabledLanguages: Language[]
+  status: ExperienceStatus
+}
+
+const BLOCK_TYPES: PageBlock['type'][] = ['header', 'paragraph', "media"]
 
 function useObjectUrl(file: File | null | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null)
@@ -27,6 +41,7 @@ function useObjectUrl(file: File | null | undefined): string | null {
   }, [file])
   return url
 }
+
 
 function useBlocks() {
   const [entries, setEntries] = useState<{ id: string; block: PageBlock }[]>([])
@@ -40,35 +55,14 @@ function useBlocks() {
     setEntries((prev) => prev.filter((e) => e.id !== id))
   }, [])
   const blocks = useMemo(() => entries.map((e) => e.block), [entries])
-  const serialize = useCallback((): PageBlock[] => entries.map((e, i) => ({ ...e.block, index: i })), [entries])
+  const serialize = useCallback((): BlogPageBlock[] => {
+    return entries.map((e, i) => {
+      // Remove any `id` that may exist on PageBlock and add index
+      const { id, ...rest } = e.block as any;
+      return { ...rest, index: i } as BlogPageBlock;
+    });
+  }, [entries]);
   return { entries, blocks, addBlock, updateBlock, deleteBlock, serialize }
-}
-
-function useCategories(
-  pageData: SkeletonPageData,
-  setPageData: React.Dispatch<React.SetStateAction<SkeletonPageData>>,
-) {
-  const [input, setInput] = useState('')
-  const categories = parseCategories(pageData.category)
-  const add = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return
-    e.preventDefault()
-    const val = input.trim()
-    if (!val) return
-    setPageData((prev) => {
-      const existing = parseCategories(prev.category)
-      if (existing.includes(val)) return prev
-      return { ...prev, category: serializeCategories([...existing, val]) }
-    })
-    setInput('')
-  }, [input, setPageData])
-  const remove = useCallback((val: string) => {
-    setPageData((prev) => ({
-      ...prev,
-      category: serializeCategories(parseCategories(prev.category).filter((c) => c !== val)),
-    }))
-  }, [setPageData])
-  return { categories, input, setInput, add, remove }
 }
 
 function HeaderBlockEditor({ block, lang, onChange }: { block: Extract<PageBlock, { type: 'header' }>; lang: Language; onChange: (b: Extract<PageBlock, { type: 'header' }>) => void }) {
@@ -125,6 +119,46 @@ function ImageBlockEditor({ block, lang, onChange }: { block: Extract<PageBlock,
   )
 }
 
+type MediaBlockEditorAcceptedTypes = "image" | "video"
+
+function MediaBlockEditor({ block, lang, onChange }: { block: Extract<PageBlock, { type: "media" }>, lang: Language, onChange: (b: Extract<PageBlock, { type: string }>) => void }) {
+  const [mode, setMode] = useState<MediaBlockEditorAcceptedTypes>("image")
+  const [open, setOpen] = useState(false)
+
+  const toggleModel = () => setOpen(prev => !prev);
+
+  const bindOnChange = (data: Asset & { src: string }) => {
+    onChange({
+      ...block,
+      id: data.id,
+      alt: data.alt,
+      file: data.file,
+      name: data.name,
+      collectionId: data.collectionId,
+      collectionName: data.collectionName,
+      src: data.src,
+      type: "media",
+      assetType: mode
+    })
+  }
+
+  return (
+    <div className="flex flex-row gap-3">
+      <label className="block">
+        <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)] capitalize">{mode}</span>
+        <MediaModel open={open} toggleOpen={toggleModel} onClick={bindOnChange} accept={mode} />
+        <Button onClick={toggleModel}>open</Button>
+      </label>
+      <label className="block capitalize">
+        <SelectField label="mode" value={mode} onChange={(e) => setMode(e.target.value as MediaBlockEditorAcceptedTypes)} className="w-32">
+          <option value="image">Image</option>
+          <option value="video">Video</option>
+        </SelectField>
+      </label>
+    </div>
+  )
+}
+
 function VideoBlockEditor({ block, lang, onChange }: { block: Extract<PageBlock, { type: 'video' }>; lang: Language; onChange: (b: Extract<PageBlock, { type: 'video' }>) => void }) {
   const previewUrl = useObjectUrl(block.file)
   const [error, setError] = useState<string | null>(null)
@@ -161,6 +195,7 @@ function BlockEditor({ block, lang, onChange, onDelete }: { block: PageBlock; la
       </div>
       {block.type === 'header' && <HeaderBlockEditor block={block} lang={lang} onChange={onChange} />}
       {block.type === 'paragraph' && <ParagraphBlockEditor block={block} lang={lang} onChange={onChange} />}
+      {block.type === "media" && <MediaBlockEditor block={block} lang={lang} onChange={onChange} />}
       {block.type === 'image' && <ImageBlockEditor block={block} lang={lang} onChange={onChange} />}
       {block.type === 'video' && <VideoBlockEditor block={block} lang={lang} onChange={onChange} />}
     </div>
@@ -174,58 +209,96 @@ function RouteComponent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const [pageData, setPageData] = useState<SkeletonPageData>({
+  const [postData, setPostData] = useState<SkeletonPageData>({
+    title: { default: '' },
+    content: {},
+    type: 'blog',
+    start_date: '',
+    end_date: '',
     defaultLanguage: 'en',
     enabledLanguages: ['en'],
-    category: '',
-    coverImage: undefined as unknown as File,
-    title: { default: '' },
-    description: { default: '' },
     status: 'Published',
   })
 
   const { entries, blocks, addBlock, updateBlock, deleteBlock, serialize } = useBlocks()
-  const categories = useCategories(pageData, setPageData)
-  const coverPreviewUrl = useObjectUrl(pageData.coverImage)
+
+  const handleTypeChange = (type: PostType) => {
+    setPostData(prev => ({
+      ...prev,
+      type,
+      start_date: type === 'blog' ? '' : prev.start_date,
+      end_date: type === 'blog' ? '' : prev.end_date,
+    }))
+  }
 
   const handleMetaChange = useCallback((e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     const fieldLang: Language = (e.target.dataset.lang as Language) ?? 'en'
-    if (name !== 'title' && name !== 'description') return
-    setPageData((prev) => ({
+    if (name !== 'title') return
+    setPostData((prev) => ({
       ...prev,
       [name]: setTranslated(prev[name] as Translatable, fieldLang, value),
     }))
   }, [])
 
-  const getMetaValue = (key: 'title' | 'description'): string => {
-    const field = pageData[key]
+  const getMetaValue = (key: 'title'): string => {
+    const field = postData[key]
     if (!field) return ''
     return resolveTranslatable(field, lang)
   }
 
   const handleSubmit = async () => {
     setSubmitError(null)
-    if (!pageData.coverImage) { setSubmitError('Cover image is required.'); return }
-    if (!pageData.title.default.trim()) { setSubmitError('Title is required.'); return }
+    if (!postData.title.default.trim()) {
+      setSubmitError('Title is required.');
+      return
+    }
 
     setSubmitting(true)
-    const result = await createBookingPage({
-      slug: pageData.title.default.toLowerCase().replace(/\s+/g, '-'),
-      title: pageData.title,
-      description: pageData.description,
-      coverImage: pageData.coverImage,
-      category: pageData.category,
-      defaultLanguage: pageData.defaultLanguage,
-      enabledLanguages: pageData.enabledLanguages,
-      status,
-      blocks: serialize(),
-    })
-    setSubmitting(false)
-    if (!result.success) {
-      setSubmitError(result.error ?? 'Something went wrong.')
+
+    // Get blocks with index, and ensure no id field (which would conflict with BlogPageBlock)
+    const blocksData = serialize() as BlogPageBlock[]; // type assertion
+
+    if (postData.type === 'blog') {
+      const result = await createBlogPage({
+        title: postData.title,
+        content: blocksData,
+        status: status,
+      })
+
+      setSubmitting(false)
+      if (!result.success) {
+        setSubmitError(result.error ?? 'Something went wrong.')
+      } else {
+        navigate({ to: '/dashboard' })
+      }
     } else {
-      navigate({ to: '/dashboard', search: { lang } })
+      // Event
+      if (!postData.start_date) {
+        setSubmitError('Start date is required for events.')
+        setSubmitting(false)
+        return
+      }
+      if (!postData.end_date) {
+        setSubmitError('End date is required for events.')
+        setSubmitting(false)
+        return
+      }
+
+      const result = await createEvent({
+        title: postData.title,
+        content: blocksData,
+        status: status,
+        startDate: new Date(postData.start_date),
+        endDate: new Date(postData.end_date),
+      })
+
+      setSubmitting(false)
+      if (!result.success) {
+        setSubmitError(result.error ?? 'Something went wrong.')
+      } else {
+        navigate({ to: '/dashboard' })
+      }
     }
   }
 
@@ -243,7 +316,7 @@ function RouteComponent() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--brand-orange)]">Dashboard</p>
-            <h1 className="mt-1 text-2xl font-bold text-[var(--sea-ink)]">Create Experience</h1>
+            <h1 className="mt-1 text-2xl font-bold text-[var(--sea-ink)]">Create Post</h1>
           </div>
           <SelectField label="Language" value={lang} onChange={(e) => setLang(e.target.value as Language)} className="w-32 cursor-pointer">
             <option value="en">English</option>
@@ -251,44 +324,48 @@ function RouteComponent() {
           </SelectField>
         </div>
 
-        <SectionCard title="Experience details">
+        <SectionCard title="Post details">
           <div className="flex flex-col gap-4">
             <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">Cover Image</span>
-              <input type="file" accept="image/*" className={controlClass} onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (!file) return
-                if (file.size > MAX_SIZE) { setSubmitError('Cover image exceeds 5MB.'); e.target.value = ''; return }
-                setSubmitError(null)
-                setPageData((prev) => ({ ...prev, coverImage: file }))
-              }} />
-              {coverPreviewUrl && <img src={coverPreviewUrl} alt="Cover preview" className="mt-1 rounded-sm max-h-36 object-cover w-full" />}
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">Categories</span>
-              <input className={controlClass} value={categories.input} onChange={(e) => categories.setInput(e.target.value)} onKeyDown={categories.add} placeholder="Type a category and press Enter…" />
-              {categories.categories.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {categories.categories.map((c) => (
-                    <span key={c} className="inline-flex items-center gap-1 rounded-sm bg-[color-mix(in_oklab,var(--brand-orange)_16%,transparent)] py-0.5 pl-2.5 pr-1.5 text-xs font-semibold text-[var(--brand-orange-deep)]">
-                      {c}
-                      <button type="button" onClick={() => categories.remove(c)} className="leading-none text-[var(--brand-orange-deep)]/60 hover:text-[var(--destructive)]">✕</button>
-                    </span>
-                  ))}
-                </div>
-              )}
+              <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">Post type</span>
+              <SelectField
+                label="Type"
+                value={postData.type}
+                onChange={(e) => handleTypeChange(e.target.value as PostType)}
+              >
+                <option value="blog">Blog</option>
+                <option value="event">Event</option>
+              </SelectField>
             </label>
 
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">Title</span>
-              <input name="title" data-lang={lang} className={controlClass} value={getMetaValue('title')} onChange={handleMetaChange} placeholder="Page title" />
+              <input name="title" data-lang={lang} className={controlClass} value={getMetaValue('title')} onChange={handleMetaChange} placeholder="Post title" />
             </label>
 
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">Description</span>
-              <textarea name="description" data-lang={lang} className={`${controlClass} min-h-16 resize-y`} value={getMetaValue('description')} onChange={handleMetaChange} placeholder="Short description…" />
-            </label>
+            {postData.type === 'event' && (
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">Start date</span>
+                  <input
+                    type="date"
+                    className={controlClass}
+                    value={postData.start_date || ''}
+                    onChange={(e) => setPostData(prev => ({ ...prev, start_date: e.target.value }))}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)]">End date</span>
+                  <input
+                    type="date"
+                    className={controlClass}
+                    value={postData.end_date || ''}
+                    onChange={(e) => setPostData(prev => ({ ...prev, end_date: e.target.value }))}
+                  />
+                </label>
+              </div>
+            )}
 
             <SelectField label="Status" value={status} onChange={(e) => setStatus(e.target.value as ExperienceStatus)}>
               <option value="Published">Published</option>
@@ -317,7 +394,7 @@ function RouteComponent() {
         )}
 
         <Button variant="primary" onClick={handleSubmit} disabled={submitting} className="self-start">
-          {submitting ? 'Creating…' : 'Create Experience'}
+          {submitting ? 'Creating…' : 'Create Post'}
         </Button>
       </div>
     </div>

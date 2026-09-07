@@ -1,12 +1,5 @@
 import { createResult, pb, Result, uploadAsset, type Asset } from "./pocketbase";
-import type {
-  HeaderBlock,
-  ParagraphBlock,
-  ImageBlock,
-  VideoBlock,
-  Translatable,
-  FlatMedia,
-} from "./experiences";
+import type { PageBlock, Translatable } from "./experiences";
 
 // ============================================================
 // STATUS
@@ -15,16 +8,12 @@ import type {
 export type PostStatus = "Published" | "Draft";
 
 // ============================================================
-// BLOCK TYPES (no SelectableBlock)
+// BLOCK TYPES – reuse PageBlock, add index
 // ============================================================
 
-export type BlogPageBlock =
-  | HeaderBlock
-  | ParagraphBlock
-  | Omit<ImageBlock, "id">
-  | Omit<VideoBlock, "id">;
-
-type FlatBlogPageBlock = HeaderBlock | ParagraphBlock | Omit<FlatMedia, "id">;
+//export type BlogPageBlock = Omit<PageBlock, "id"> & { index: number };
+export type BlogPageBlock = PageBlock & { index: number };
+export type EventBlock = PageBlock & { index: number };
 
 // ============================================================
 // BLOG PAGE
@@ -42,7 +31,7 @@ export type BlogPage = {
 export type HydratedBlogPage = {
   id: string;
   title: Translatable;
-  content: FlatBlogPageBlock[];
+  content: BlogPageBlock[];
   status: PostStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -54,13 +43,6 @@ export type UpdateBlogPageInput = Omit<BlogPage, "id" | "createdAt" | "updatedAt
 // ============================================================
 // EVENT
 // ============================================================
-export type EventBlock =
-  | HeaderBlock
-  | ParagraphBlock
-  | Omit<ImageBlock, "id">
-  | Omit<VideoBlock, "id">;
-
-type FlatEventBlock = HeaderBlock | ParagraphBlock | Omit<FlatMedia, "id">;
 
 export type Event = {
   id: string;
@@ -76,7 +58,7 @@ export type Event = {
 export type HydratedEvent = {
   id: string;
   title: Translatable;
-  content: FlatEventBlock[];
+  content: EventBlock[];
   status: PostStatus;
   startDate: Date;
   endDate: Date;
@@ -88,17 +70,18 @@ export type CreateEventInput = Omit<Event, "id" | "createdAt" | "updatedAt">;
 export type UpdateEventInput = Omit<Event, "id" | "createdAt" | "updatedAt">;
 
 // ============================================================
-// CRUD FUNCTIONS — BLOG PAGE
+// CRUD FUNCTIONS
 // ============================================================
+
 export async function createBlogPage(
   input: CreateBlogPageInput
 ): Promise<Result<HydratedBlogPage, string>> {
   try {
-    const flatContent = await flattenBlocks(input.content);
+    const processedContent = await processBlocks(input.content);
 
     const result = await pb.collection("Posts").create({
       title: JSON.stringify(input.title),
-      content: flatContent,
+      content: JSON.stringify(processedContent),
       type: "blog",
       status: input.status,
     });
@@ -106,7 +89,7 @@ export async function createBlogPage(
     return createResult<HydratedBlogPage, string>({
       id: result.id,
       title: input.title,
-      content: flatContent,
+      content: processedContent,
       status: input.status,
       createdAt: new Date(result.created),
       updatedAt: new Date(result.updated),
@@ -121,11 +104,11 @@ export async function updateBlogPage(
   input: UpdateBlogPageInput
 ): Promise<Result<HydratedBlogPage, string>> {
   try {
-    const flatContent = await flattenBlocks(input.content);
+    const processedContent = await processBlocks(input.content);
 
     const result = await pb.collection("Posts").update(id, {
       title: JSON.stringify(input.title),
-      content: flatContent,
+      content: JSON.stringify(processedContent),
       type: "blog",
       status: input.status,
     });
@@ -133,7 +116,7 @@ export async function updateBlogPage(
     return createResult<HydratedBlogPage, string>({
       id: result.id,
       title: input.title,
-      content: flatContent,
+      content: processedContent,
       status: input.status,
       createdAt: new Date(result.created),
       updatedAt: new Date(result.updated),
@@ -175,17 +158,18 @@ export async function listBlogPages(): Promise<Result<HydratedBlogPage[], string
 }
 
 // ============================================================
-// CRUD FUNCTIONS — EVENT
+// EVENT CRUD FUNCTIONS
 // ============================================================
+
 export async function createEvent(
   input: CreateEventInput
 ): Promise<Result<HydratedEvent, string>> {
   try {
-    const flatContent = await flattenBlocks(input.content);
+    const processedContent = await processBlocks(input.content);
 
     const result = await pb.collection("Posts").create({
       title: JSON.stringify(input.title),
-      content: flatContent,
+      content: JSON.stringify(processedContent),
       start_date: input.startDate.toISOString(),
       end_date: input.endDate.toISOString(),
       type: "event",
@@ -195,7 +179,7 @@ export async function createEvent(
     return createResult<HydratedEvent, string>({
       id: result.id,
       title: input.title,
-      content: flatContent,
+      content: processedContent,
       status: input.status,
       startDate: new Date(result.start_date),
       endDate: new Date(result.end_date),
@@ -212,11 +196,11 @@ export async function updateEvent(
   input: UpdateEventInput
 ): Promise<Result<HydratedEvent, string>> {
   try {
-    const flatContent = await flattenBlocks(input.content);
+    const processedContent = await processBlocks(input.content);
 
     const result = await pb.collection("Posts").update(id, {
       title: JSON.stringify(input.title),
-      content: flatContent,
+      content: JSON.stringify(processedContent),
       start_date: input.startDate.toISOString(),
       end_date: input.endDate.toISOString(),
       type: "event",
@@ -226,7 +210,7 @@ export async function updateEvent(
     return createResult<HydratedEvent, string>({
       id: result.id,
       title: input.title,
-      content: flatContent,
+      content: processedContent,
       status: input.status,
       startDate: new Date(result.start_date),
       endDate: new Date(result.end_date),
@@ -270,47 +254,42 @@ export async function listEvents(): Promise<Result<HydratedEvent[], string>> {
 }
 
 // ============================================================
-// INTERNAL HELPERS
+// HELPERS
 // ============================================================
-async function flattenBlocks(blocks: BlogPageBlock[] | EventBlock[]): Promise<FlatBlogPageBlock[]> {
-  const pending = blocks.map(async (block, index) => {
-    if (["image", "video"].includes(block.type)) {
-      // @ts-ignore
-      if (!block.file) throw new Error(`Block at index ${index} has no file`);
-      // @ts-ignore
-      return [await uploadAsset(block.file), index, block];
-    } else {
-      return [block, index, null];
-    }
-  });
 
-  const settled = await Promise.all(pending);
-
-  return settled.map(([bb, index, originalBlock]) => {
-    if (bb instanceof Result) {
-      if (bb.success) {
-        const f = bb.value as Asset;
-        return {
-          type: f.type,
-          asset_id: f.id,
-          index,
-          alt: (originalBlock as ImageBlock).alt.default,
-          caption: (originalBlock as ImageBlock).caption?.default,
-        } as Omit<FlatMedia, "id">;
-      } else {
-        throw new Error("Failed to upload asset-based block");
+async function processBlocks<T extends (BlogPageBlock | EventBlock)[]>(
+  blocks: T
+): Promise<T> {
+  const processed = await Promise.all(
+    blocks.map(async (block) => {
+      // Upload file if the block has a `file` property (image, video, media)
+      if (block.file && typeof block.file !== 'string') {
+        const result = await uploadAsset(block.file);
+        if (result.success) {
+          const asset = result.value;
+          // Replace file with the asset URL, keep asset_id
+          const updated = {
+            ...block,
+            file: asset.url,
+            src: block.type === 'media' ? asset.url : block.src, // for media, also set src
+            asset_id: asset.id,
+          };
+          return updated;
+        } else {
+          throw new Error(`Failed to upload asset: ${result.error}`);
+        }
       }
-    } else {
-      return bb as FlatBlogPageBlock;
-    }
-  });
+      return block;
+    })
+  );
+  return processed as T;
 }
 
 function hydrateBlogRecord(record: Record<string, any>): HydratedBlogPage {
   return {
     id: record.id,
     title: typeof record.title === "string" ? JSON.parse(record.title) : record.title,
-    content: record.content ?? [],
+    content: typeof record.content === "string" ? JSON.parse(record.content) : (record.content ?? []),
     status: (record.status as PostStatus) ?? "Draft",
     createdAt: new Date(record.created),
     updatedAt: new Date(record.updated),
@@ -321,7 +300,7 @@ function hydrateEventRecord(record: Record<string, any>): HydratedEvent {
   return {
     id: record.id,
     title: typeof record.title === "string" ? JSON.parse(record.title) : record.title,
-    content: record.content ?? [],
+    content: typeof record.content === "string" ? JSON.parse(record.content) : (record.content ?? []),
     status: (record.status as PostStatus) ?? "Draft",
     startDate: new Date(record.start_date),
     endDate: new Date(record.end_date),

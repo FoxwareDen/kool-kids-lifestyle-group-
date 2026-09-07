@@ -6,7 +6,7 @@ import { BookingPageRenderer } from '#/components/BookingPageRenderer'
 import { Button, SectionCard, SelectField, controlClass } from '#/components/dashboard/form-controls'
 import { Trash2 } from 'lucide-react'
 import { setTranslated } from '#/lib/utils'
-import MediaModel from '#/components/mediaModel'
+import MediaModel from '#/components/MediaModel'
 import type { Asset } from '#/lib/pocketbase'
 
 const MAX_SIZE = 5242880
@@ -128,16 +128,16 @@ function ImageBlockEditor({ block, lang, onChange }: { block: Extract<PageBlock,
   )
 }
 
-type MediaBlockEditorAcceptedTypes = "image"|"video"
+type MediaBlockEditorAcceptedTypes = "image" | "video"
 
-function MediaBlockEditor({ block, lang, onChange }: {block: Extract<PageBlock, { type: "media" }>, lang: Language, onChange: (b: Extract<PageBlock, {type: string}>) => void}) {
+function MediaBlockEditor({ block, lang, onChange }: { block: Extract<PageBlock, { type: "media" }>, lang: Language, onChange: (b: Extract<PageBlock, { type: string }>) => void }) {
   const [mode, setMode] = useState<MediaBlockEditorAcceptedTypes>("image")
   const [open, setOpen] = useState(false)
 
-  const toggleModel = () => setOpen(prev=>!prev);
+  const toggleModel = () => setOpen(prev => !prev);
 
-  const bindOnChange = (data: Asset & { src: string}) => {
-    onChange({ 
+  const bindOnChange = (data: Asset & { src: string }) => {
+    onChange({
       ...block,
       id: data.id,
       alt: data.alt,
@@ -157,12 +157,12 @@ function MediaBlockEditor({ block, lang, onChange }: {block: Extract<PageBlock, 
         <span className="mb-1 block text-sm font-semibold text-[var(--sea-ink)] capitalize">{mode}</span>
         <MediaModel open={open} toggleOpen={toggleModel} onClick={bindOnChange} accept={mode} />
         <Button onClick={toggleModel}>open</Button>
-        </label>
+      </label>
       <label className="block capitalize">
-          <SelectField label="mode" value={mode} onChange={(e) => setMode(e.target.value as MediaBlockEditorAcceptedTypes) } className="w-32">
-            <option value="image">Image</option>
-            <option value="video">Video</option>
-          </SelectField>
+        <SelectField label="mode" value={mode} onChange={(e) => setMode(e.target.value as MediaBlockEditorAcceptedTypes)} className="w-32">
+          <option value="image">Image</option>
+          <option value="video">Video</option>
+        </SelectField>
       </label>
     </div>
   )
@@ -204,7 +204,7 @@ function BlockEditor({ block, lang, onChange, onDelete }: { block: PageBlock; la
       </div>
       {block.type === 'header' && <HeaderBlockEditor block={block} lang={lang} onChange={onChange} />}
       {block.type === 'paragraph' && <ParagraphBlockEditor block={block} lang={lang} onChange={onChange} />}
-      {block.type === "media" && <MediaBlockEditor block={block} lang={lang} onChange={onChange} /> }
+      {block.type === "media" && <MediaBlockEditor block={block} lang={lang} onChange={onChange} />}
       {block.type === 'image' && <ImageBlockEditor block={block} lang={lang} onChange={onChange} />}
       {block.type === 'video' && <VideoBlockEditor block={block} lang={lang} onChange={onChange} />}
     </div>
@@ -248,10 +248,10 @@ function RouteComponent() {
     return resolveTranslatable(field, lang)
   }
 
-  useEffect(()=>{
+  useEffect(() => {
     console.log(blocks);
-    
-  },[blocks])
+
+  }, [blocks])
 
   const handleSubmit = async () => {
     setSubmitError(null)
