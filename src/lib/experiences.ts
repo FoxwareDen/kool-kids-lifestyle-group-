@@ -42,11 +42,11 @@ export type VideoBlock = {
   title?: Translatable;
 };
 
-export type TempAsset = 
+export type TempAsset =
   Asset & {
     src?: string,
     type: "media"
-    assetType: "image"|"video"|"svg"
+    assetType: "image" | "video" | "svg"
   }
 
 // What gets saved into the PocketBase JSON column
@@ -81,7 +81,17 @@ export type HydratedVideoBlock = Omit<StorageMediaBlock, "asset_id" | "asset_col
   url: string;
 };
 
-export type HydratedPageBlock = HeaderBlock | ParagraphBlock | HydratedImageBlock | HydratedVideoBlock;
+
+export type HydratedMediaBlock = {
+  index: number;
+  type: "media";
+  src: string;
+  assetType: "image" | "video" | "svg";
+  alt?: string;
+  name?: string;
+};
+
+export type HydratedPageBlock = HeaderBlock | ParagraphBlock | HydratedImageBlock | HydratedVideoBlock | HydratedMediaBlock;
 
 // ============================================================
 // BOOKING PAGE
@@ -128,7 +138,7 @@ export type HydratedBookingPage = {
   blocks: HydratedPageBlock[];
   status: ExperienceStatus;
   createdAt: Date;
-  updatedAt: Date;  
+  updatedAt: Date;
 };
 
 // ============================================================
@@ -136,7 +146,7 @@ export type HydratedBookingPage = {
 // ============================================================
 export function hydrateBlocks(blocks: StoragePageBlock[]): HydratedPageBlock[] {
   if (!blocks || !Array.isArray(blocks)) return [];
-  
+
   return blocks.map((block) => {
     if (block.type === "image" || block.type === "video") {
       const { asset_collectionId, asset_id, asset_file, ...rest } = block as StorageMediaBlock;
@@ -236,7 +246,7 @@ export type FeatureCard = Omit<FlatBookingPage, "expand" | "blocks" | "slug" | "
   lang: Language;
 }
 
-export async function fetchFeaturedExperienceCard(lang: Language="en", cookieHeader?: string): Promise<Result<FeatureCard[], string>>{
+export async function fetchFeaturedExperienceCard(lang: Language = "en", cookieHeader?: string): Promise<Result<FeatureCard[], string>> {
   let client;
 
   if (environmentManager.isServer()) {
@@ -248,13 +258,13 @@ export async function fetchFeaturedExperienceCard(lang: Language="en", cookieHea
 
   try {
     const records: FlatBookingPage[] = await client.collection("Experiences").getFullList({
-      filter:  `(category = "featured" || category ~ "featured," || category ~ ",featured") && status = "Published"`,
+      filter: `(category = "featured" || category ~ "featured," || category ~ ",featured") && status = "Published"`,
       expand: 'coverImage'
     })
 
-    const t: FeatureCard[] = records.map((obj)=>{
+    const t: FeatureCard[] = records.map((obj) => {
       // @ts-ignore
-      const image = obj.expand["coverImage"];      
+      const image = obj.expand["coverImage"];
       return {
         id: obj.id,
         category: obj.category,
@@ -279,7 +289,7 @@ export async function fetchFeaturedExperienceCard(lang: Language="en", cookieHea
 }
 
 
-export async function fetchAllExperiencesCard(lang: Language="en", cookieHeader?: string): Promise<Result<FeatureCard[], string>>{
+export async function fetchAllExperiencesCard(lang: Language = "en", cookieHeader?: string): Promise<Result<FeatureCard[], string>> {
   let client;
 
   if (environmentManager.isServer()) {
@@ -291,13 +301,13 @@ export async function fetchAllExperiencesCard(lang: Language="en", cookieHeader?
 
   try {
     const records: FlatBookingPage[] = await client.collection("Experiences").getFullList({
-      filter:  `status = "Published"`,
+      filter: `status = "Published"`,
       expand: 'coverImage'
     })
 
-    const t: FeatureCard[] = records.map((obj)=>{
+    const t: FeatureCard[] = records.map((obj) => {
       // @ts-ignore
-      const image = obj.expand["coverImage"];      
+      const image = obj.expand["coverImage"];
       return {
         id: obj.id,
         category: obj.category,
@@ -324,8 +334,8 @@ export async function fetchAllExperiencesCard(lang: Language="en", cookieHeader?
 // ASYNC HELPER: HYDRATE BLOCKS WITH DATABASE LOOKUP
 // ============================================================
 export async function hydrateBlocksAsync(
-  client: any, 
-  blocks: any[], 
+  client: any,
+  blocks: any[],
   fallbackCollectionId: string
 ): Promise<HydratedPageBlock[]> {
   if (!blocks || !Array.isArray(blocks)) return [];
@@ -394,11 +404,11 @@ export async function fetchExperiences(cookieHeader?: string): Promise<Result<Hy
     const hydratedRecords = await Promise.all(
       records.map(async (obj) => {
         // @ts-ignore
-        const image = obj.expand["coverImage"];      
+        const image = obj.expand["coverImage"];
         const rawBlocks = typeof obj.blocks === "string" ? JSON.parse(obj.blocks) : obj.blocks;
 
         // Dynamically extract the assets collection ID from the coverImage relation metadata
-        const assetCollectionId = image?.collectionId || "assets"; 
+        const assetCollectionId = image?.collectionId || "assets";
 
         return {
           ...obj,
@@ -412,7 +422,7 @@ export async function fetchExperiences(cookieHeader?: string): Promise<Result<Hy
       })
     );
 
-    return createResult(hydratedRecords, null);    
+    return createResult(hydratedRecords, null);
   } catch (error) {
     console.error(error);
     return createResult(null, "failed to get experiences");
@@ -438,7 +448,7 @@ export async function fetchExperienceById(id: string, cookieHeader?: string) {
     // @ts-ignore
     const image = record.expand["coverImage"];
     const rawBlocks = typeof record.blocks === "string" ? JSON.parse(record.blocks) : record.blocks;
-    
+
     // Dynamically extract the assets collection ID from the coverImage relation metadata
     const assetCollectionId = image?.collectionId || "assets";
 
@@ -457,7 +467,7 @@ export async function fetchExperienceById(id: string, cookieHeader?: string) {
   }
 }
 
-export async function deleteExperienceById(id:string, cookieHeader?: string) {
+export async function deleteExperienceById(id: string, cookieHeader?: string) {
   let client;
 
   if (environmentManager.isServer()) {
@@ -468,7 +478,7 @@ export async function deleteExperienceById(id:string, cookieHeader?: string) {
   }
 
   try {
-    const res: boolean= await client.collection("Experiences").delete(id);
+    const res: boolean = await client.collection("Experiences").delete(id);
     return createResult(res, null)
   } catch (error) {
     console.error(error);
@@ -528,6 +538,6 @@ export function createEmptyBlock(type: PageBlock["type"], index: number): PageBl
     case "video":
       return { ...base, type, file: null as unknown as File };
     case "media":
-      return {...base , type, alt: "", collectionId: "", collectionName: "", file: "", id:"", name: "", assetType: "image"}
+      return { ...base, type, alt: "", collectionId: "", collectionName: "", file: "", id: "", name: "", assetType: "image" }
   }
 }

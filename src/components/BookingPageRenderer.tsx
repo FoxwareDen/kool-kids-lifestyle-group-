@@ -225,6 +225,8 @@ export const FlatPageRenderer = ({ data, lang }: FlatPageRendererProps) => {
               return <HydratedImageRenderer key={block.index} block={block} lang={lang} />;
             case "video":
               return <HydratedVideoRenderer key={block.index} block={block} lang={lang} />;
+            case "media":
+              return <MediaRenderer key={block.index} block={block as any} lang={lang} />;
             default:
               return (
                 <div key={(block as any).index} className="text-red-500 text-sm italic">
